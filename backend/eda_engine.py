@@ -639,11 +639,10 @@ def run_feature_engineering_and_selection(df: pd.DataFrame, nominal_cols: list, 
     if target_col not in df.columns:
         return {"error": "Target column not found"}
         
-    # 1. ENCODING LOGIC (Exactly as requested by user)
     dataset = df.copy()
     encoding_report = []
 
-    # Detect categorical columns if not provided
+    # 1. ENCODING REPORT (Exactly as requested by user)
     for col in nominal_cols:
         if col in dataset.columns:
             if dataset[col].nunique() == 2:
@@ -654,7 +653,7 @@ def run_feature_engineering_and_selection(df: pd.DataFrame, nominal_cols: list, 
         if col in dataset.columns:
             encoding_report.append([col, "Ordinal", "Ordinal Encoding"])
 
-    # 2. APPLY ENCODING (Snippet logic)
+    # 2. APPLY ENCODING (Requested logic)
     for col in nominal_cols:
         if col in dataset.columns:
             le = LabelEncoder()
@@ -666,56 +665,48 @@ def run_feature_engineering_and_selection(df: pd.DataFrame, nominal_cols: list, 
         if cols_to_encode:
             dataset[cols_to_encode] = oe.fit_transform(dataset[cols_to_encode].astype(str))
             
-    if target_col in dataset.columns and (dataset[target_col].dtype == "object" or not pd.api.types.is_numeric_dtype(dataset[target_col])):
-        le = LabelEncoder()
-        dataset[target_col] = le.fit_transform(dataset[target_col].astype(str))
-        # Note: We don't add target to encoding_report here as it's handled in importance
+    # Target encoding check (Standard numpy check instead of pd.api)
+    if target_col in dataset.columns:
+        if not np.issubdtype(dataset[target_col].dtype, np.number):
+            le = LabelEncoder()
+            dataset[target_col] = le.fit_transform(dataset[target_col].astype(str))
 
-    # 3. FEATURE IMPORTANCE (Ensuring X consists only of numbers)
-    X = dataset.drop(columns=[target_col])
-    X = X.select_dtypes(include=[np.number])
+    # 3. FEATURE IMPORTANCE
+    X = dataset.drop(columns=[target_col]).select_dtypes(include=[np.number])
     X = X.fillna(X.median())
-    
     y = dataset[target_col].fillna(0)
     
-    model = RandomForestClassifier(random_state=42)
-    feature_b64 = ""
+    important_cols = list(X.columns)
     feature_importance_list = []
+    feature_b64 = ""
     
     try:
+        model = RandomForestClassifier(random_state=42)
         model.fit(X, y)
         importance = model.feature_importances_
-        feature_df = pd.DataFrame({
-            "Column Name": X.columns,
-            "Importance Score": importance
-        })
+        feature_df = pd.DataFrame({"Column Name": X.columns, "Importance Score": importance})
         feature_df["Importance %"] = (feature_df["Importance Score"] * 100).round(2)
         feature_df["Important"] = feature_df["Importance %"].apply(lambda x: "Yes" if x > 5 else "No")
         feature_df = feature_df.sort_values(by="Importance %", ascending=False)
-        
         feature_importance_list = feature_df.replace({np.nan: None}).values.tolist()
         
-        # 4. CHART
         fig, ax = plt.subplots(figsize=(10, 5))
         ax.bar(feature_df["Column Name"], feature_df["Importance %"])
         ax.set_xticklabels(feature_df["Column Name"], rotation=45, ha='right')
-        ax.set_ylabel("Importance %")
         ax.set_title("Feature Importance")
         fig.tight_layout()
         feature_b64 = generate_base64_img(fig)
-        
         important_cols = feature_df[feature_df["Important"] == "Yes"]["Column Name"].tolist()
     except Exception as e:
-        important_cols = list(X.columns)
-        feature_importance_list = [["Error",0,0,"No"]]
+        feature_importance_list = [["Analysis Error", 0, 0, "No"]]
 
-    # Return full state for frontend to handle choices
+    # 4. FINAL DATASET FOR DOWNLOAD
     csv_buffer = io.StringIO()
     dataset.to_csv(csv_buffer, index=False)
     all_dataset_b64 = base64.b64encode(csv_buffer.getvalue().encode('utf-8')).decode('utf-8')
 
-    # 7. AI ASSISTANT EXPLANATION (Exactly as requested by user)
-    ai_report = "AI Report currently unavailable (Feature Engineering)."
+    # 5. AI ASSISTANT EXPLANATION (Exactly as requested by user)
+    ai_report = "AI Report currently unavailable."
     api_key = os.getenv("GROQ_API_KEY")
     if api_key:
         try:
@@ -752,8 +743,8 @@ Explain clearly for a beginner how the detection works, and why each encoding ty
                 temperature=0.7
             )
             ai_report = chat.choices[0].message.content
-        except Exception as e:
-            ai_report = f"AI Explanation failed: {str(e)}"
+        except Exception:
+            ai_report = "Detailed AI Explanation generated but could not be retrieved."
 
     return {
         "encoding_report": encoding_report,
