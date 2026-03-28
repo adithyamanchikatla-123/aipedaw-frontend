@@ -568,9 +568,17 @@ def run_multivariate_analysis(df: pd.DataFrame, numerical_cols: list, target_col
     # 2. Pairplot (OPTIMIZED: Only Top 6 Correlation Columns + Max 1000 Rows)
     pairplot_b64 = ""
     if target_col in df.columns:
-        # Sort numerical columns by correlation with target (if Target is numeric)
-        target_corr = df[numerical_cols + [target_col]].corr()[target_col].abs().sort_values(ascending=False)
-        top_correlated = target_corr.index[1:7].tolist() # Top 6 excluding target itself
+        # Sort numerical columns by correlation with target (Only if Target is numeric)
+        try:
+            temp_df = df[numerical_cols + [target_col]]
+            corr_matrix_full = temp_df.corr()
+            if target_col in corr_matrix_full.columns:
+                target_corr = corr_matrix_full[target_col].abs().sort_values(ascending=False)
+                top_correlated = target_corr.index[1:7].tolist() # Top 6 excluding target itself
+            else:
+                top_correlated = numerical_cols[:6] # Fallback to first 6 numerical
+        except Exception:
+            top_correlated = numerical_cols[:6]
         
         plot_cols = top_correlated + [target_col]
         plot_cols = list(dict.fromkeys(plot_cols))
