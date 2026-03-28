@@ -621,8 +621,8 @@ def run_multivariate_analysis(df: pd.DataFrame, numerical_cols: list, target_col
 
     return {
         "corr_table": df[numerical_cols].corr().round(3).reset_index().replace({np.nan: None}).to_dict('records') if len(numerical_cols) >= 2 else [],
-        "heatmap": heatmap_b64,
-        "pairplot": pairplot_b64,
+        "heatmap": heatmap_b64 if heatmap_b64 else "",
+        "pairplot": pairplot_b64 if pairplot_b64 else "",
         "ai_report": ai_report
     }
 
@@ -633,40 +633,35 @@ def run_feature_engineering_and_selection(df: pd.DataFrame, nominal_cols: list, 
     dataset = df.copy()
     encoding_report = []
 
-    # 1. ENCODING SUMMARY LOGIC
-    for col in nominal_cols:
-        if col in dataset.columns:
-            if dataset[col].nunique() == 2:
-                encoding_report.append([col, "Binary Nominal", "Label Encoding"])
-            else:
-                encoding_report.append([col, "Nominal", "Label Encoding"])
-    for col in ordinal_cols:
-        if col in dataset.columns:
-            encoding_report.append([col, "Ordinal", "Ordinal Encoding"])
+    # 1. ENCODING LOGIC (Separate Nominal and Ordinal as requested)
+    # Apply One-Hot Encoding for Nominal Columns
+    if len(nominal_cols) > 0:
+        cols_to_dummies = [c for c in nominal_cols if c in dataset.columns and c != target_col]
+        if cols_to_dummies:
+            dataset = pd.get_dummies(dataset, columns=cols_to_dummies, prefix="nom")
+            for col in cols_to_dummies:
+                encoding_report.append([col, "Nominal", "One-Hot Encoding"])
 
-    # 2. APPLY ENCODING
-    for col in nominal_cols:
-        if col in dataset.columns:
-            le = LabelEncoder()
-            dataset[col] = le.fit_transform(dataset[col].astype(str))
-    
+    # Apply Ordinal Encoding for Ordinal Columns
     if len(ordinal_cols) > 0:
         oe = OrdinalEncoder()
-        cols_to_encode = [c for c in ordinal_cols if c in dataset.columns]
+        cols_to_encode = [c for c in ordinal_cols if c in dataset.columns and c != target_col]
         if cols_to_encode:
             dataset[cols_to_encode] = oe.fit_transform(dataset[cols_to_encode].astype(str))
+            for col in cols_to_encode:
+                encoding_report.append([col, "Ordinal", "Ordinal Encoding"])
             
-    if dataset[target_col].dtype == "object":
+    if target_col in dataset.columns and (dataset[target_col].dtype == "object" or not pd.api.types.is_numeric_dtype(dataset[target_col])):
         le = LabelEncoder()
         dataset[target_col] = le.fit_transform(dataset[target_col].astype(str))
+        encoding_report.append([target_col, "Target", "Label Encoding"])
 
-    # 3. FEATURE IMPORTANCE
+    # 3. FEATURE IMPORTANCE (Ensuring X consists only of numbers)
+    # Target may have changed due to get_dummies (unlikely but just in case), but we need X to be numeric
     X = dataset.drop(columns=[target_col])
-    # Ensure all X is numeric for RF
-    for col in X.columns:
-        if X[col].dtype == 'object':
-            X[col] = LabelEncoder().fit_transform(X[col].astype(str))
-        X[col] = X[col].fillna(X[col].median() if pd.api.types.is_numeric_dtype(X[col]) else 0)
+    # Ensure all columns are numeric for RandomForest
+    X = X.select_dtypes(include=[np.number])
+    X = X.fillna(X.median())
     
     y = dataset[target_col].fillna(0)
     
