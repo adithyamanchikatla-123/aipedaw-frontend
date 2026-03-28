@@ -1,8 +1,8 @@
 import os
 from groq import Groq
 
-# AI Model Selection (llama-3.1-8b-instant is best for high rate limits on free tier)
-MODEL = "llama-3.1-8b-instant"
+# AI Model Selection (llama3-8b-8192 is the most stable for Hackathons)
+MODEL = "llama3-8b-8192"
 CHAT_MODEL = "llama-3.3-70b-versatile"
 
 def get_groq_client():
