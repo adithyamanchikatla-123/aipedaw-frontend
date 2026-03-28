@@ -329,18 +329,27 @@ def run_numerical_univariate(df: pd.DataFrame, numerical_cols: list):
         for j in range(i+1, len(axs_box)): axs_box[j].axis("off")
         box_before_b64 = generate_base64_img(fig_box)
 
-    # 5. Treatment
+    # 5. Treatment (Imputation + Outlier/Skewness)
     treatment_logs = []
     for col in numerical_cols:
+        # Handle Missing Values (Imputation)
+        null_count = df[col].isnull().sum()
+        if null_count > 0:
+            median_val = df[col].median()
+            df[col] = df[col].fillna(median_val)
+            treatment_logs.append(f"Filled {null_count} missing values in {col} with median ({round(median_val, 2)})")
+            
+        # Handle Skewness and Outliers
         skew_val = df[col].skew()
         if pd.isna(skew_val): continue
         if abs(skew_val) > 1:
-            treatment_logs.append(f"Treated {col}")
-            # Simplified for speed
-            if abs(skew_val) > 5:
+            treatment_logs.append(f"Treated skewness in {col} (Skew: {round(skew_val, 2)})")
+            # Log Transformation for high skew, clipping for moderate
+            if abs(skew_val) > 3:
+                # Add a small constant to avoid log(0)
                 df[col] = np.log1p(df[col].clip(lower=0))
             else:
-                Q1, Q3 = np.percentile(df[col].dropna(), [25, 75])
+                Q1, Q3 = np.percentile(df[col], [25, 75])
                 IQR = Q3 - Q1
                 df[col] = np.clip(df[col], Q1 - 1.5 * IQR, Q3 + 1.5 * IQR)
 
@@ -630,36 +639,40 @@ def run_feature_engineering_and_selection(df: pd.DataFrame, nominal_cols: list, 
     if target_col not in df.columns:
         return {"error": "Target column not found"}
         
+    # 1. ENCODING LOGIC (Exactly as requested by user)
     dataset = df.copy()
     encoding_report = []
 
-    # 1. ENCODING LOGIC (Separate Nominal and Ordinal as requested)
-    # Apply One-Hot Encoding for Nominal Columns
-    if len(nominal_cols) > 0:
-        cols_to_dummies = [c for c in nominal_cols if c in dataset.columns and c != target_col]
-        if cols_to_dummies:
-            dataset = pd.get_dummies(dataset, columns=cols_to_dummies, prefix="nom")
-            for col in cols_to_dummies:
-                encoding_report.append([col, "Nominal", "One-Hot Encoding"])
+    # Detect categorical columns if not provided
+    for col in nominal_cols:
+        if col in dataset.columns:
+            if dataset[col].nunique() == 2:
+                encoding_report.append([col, "Binary Nominal", "Label Encoding"])
+            else:
+                encoding_report.append([col, "Nominal", "Label Encoding"])
+    for col in ordinal_cols:
+        if col in dataset.columns:
+            encoding_report.append([col, "Ordinal", "Ordinal Encoding"])
 
-    # Apply Ordinal Encoding for Ordinal Columns
+    # 2. APPLY ENCODING (Snippet logic)
+    for col in nominal_cols:
+        if col in dataset.columns:
+            le = LabelEncoder()
+            dataset[col] = le.fit_transform(dataset[col].astype(str))
+    
     if len(ordinal_cols) > 0:
         oe = OrdinalEncoder()
-        cols_to_encode = [c for c in ordinal_cols if c in dataset.columns and c != target_col]
+        cols_to_encode = [c for c in ordinal_cols if c in dataset.columns]
         if cols_to_encode:
             dataset[cols_to_encode] = oe.fit_transform(dataset[cols_to_encode].astype(str))
-            for col in cols_to_encode:
-                encoding_report.append([col, "Ordinal", "Ordinal Encoding"])
             
     if target_col in dataset.columns and (dataset[target_col].dtype == "object" or not pd.api.types.is_numeric_dtype(dataset[target_col])):
         le = LabelEncoder()
         dataset[target_col] = le.fit_transform(dataset[target_col].astype(str))
-        encoding_report.append([target_col, "Target", "Label Encoding"])
+        # Note: We don't add target to encoding_report here as it's handled in importance
 
     # 3. FEATURE IMPORTANCE (Ensuring X consists only of numbers)
-    # Target may have changed due to get_dummies (unlikely but just in case), but we need X to be numeric
     X = dataset.drop(columns=[target_col])
-    # Ensure all columns are numeric for RandomForest
     X = X.select_dtypes(include=[np.number])
     X = X.fillna(X.median())
     
