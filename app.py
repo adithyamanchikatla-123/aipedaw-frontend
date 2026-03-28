@@ -531,6 +531,12 @@ elif st.session_state.page == "dashboard":
                 if fe_data.get("feature_chart"):
                     st.image(base64.b64decode(fe_data["feature_chart"]), use_container_width=True)
 
+                # 4.1 AI ASSISTANT EXPLANATION
+                st.write("")
+                st.write("AI Feature Engineering Assistant")
+                st.info(fe_data.get("ai_report", "Generating AI explanation..."))
+                st.write("")
+
                 # 5 IMPORTANT FEATURES
                 important_cols = fe_data.get("selected_columns", [])
                 st.write("")

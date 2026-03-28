@@ -714,13 +714,55 @@ def run_feature_engineering_and_selection(df: pd.DataFrame, nominal_cols: list, 
     dataset.to_csv(csv_buffer, index=False)
     all_dataset_b64 = base64.b64encode(csv_buffer.getvalue().encode('utf-8')).decode('utf-8')
 
+    # 7. AI ASSISTANT EXPLANATION (Exactly as requested by user)
+    ai_report = "AI Report currently unavailable (Feature Engineering)."
+    api_key = os.getenv("GROQ_API_KEY")
+    if api_key:
+        try:
+            client = Groq(api_key=api_key)
+            prompt = f"""
+You are an AI assistant explaining how the AI-Powered EDA Wizard handles column detection and encoding.
+
+1. Column Type Detection:
+- Nominal Columns: Columns with categorical values that have no logical order (e.g., City names, Gender, Yes/No). 
+- Ordinal Columns: Columns with categorical values that have a logical order (e.g., Low < Medium < High, Rural < Semiurban < Urban). 
+- Binary Columns: Columns with only 2 unique values. 
+    - If values are 0 and 1 → treated as numerical categorical. 
+    - If values are not 0/1 but unique count = 2 → treated as nominal categorical.
+- Target Column: The column most likely used for prediction. If AI cannot detect, the last column is assumed as target.
+
+2. Encoding Rules:
+- Nominal Columns:
+    - If 2 unique values (binary) → Label Encoding (0,1)
+    - If >2 unique values → Label Encoding for simplicity (each category gets a unique integer)
+- Ordinal Columns:
+    - Ordinal Encoding → preserves order of categories as numerical values
+- Target Column:
+    - If categorical → Label Encoding
+    - If numerical → no encoding
+- Binary Columns (with 2 unique non-0/1 values):
+    - Treated as nominal → Label Encoding to map the two unique categories to 0 and 1
+- All encoding ensures the dataset is ready for machine learning models.
+
+Explain clearly for a beginner how the detection works, and why each encoding type is chosen. Provide examples for each case.
+"""
+            chat = client.chat.completions.create(
+                model=MODEL,
+                messages=[{"role":"user", "content": prompt}],
+                temperature=0.7
+            )
+            ai_report = chat.choices[0].message.content
+        except Exception as e:
+            ai_report = f"AI Explanation failed: {str(e)}"
+
     return {
         "encoding_report": encoding_report,
         "feature_importance": feature_importance_list,
         "feature_chart": feature_b64,
         "selected_columns": important_cols,
         "all_dataset_b64": all_dataset_b64,
-        "all_columns": list(X.columns)
+        "all_columns": list(X.columns),
+        "ai_report": ai_report
     }
 
 def run_ml_recommendation(dataset: pd.DataFrame, target_col: str):
