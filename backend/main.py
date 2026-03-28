@@ -218,4 +218,4 @@ User Question:
 
 @app.get("/")
 def health_check():
-    return {"status": "AI EDA Backend API is running perfectly!", "version": "HACKFEST_FINAL_V4_MODELS_FIXED"}
+    return {"status": "AI EDA Backend API is running perfectly!", "version": "HACKFEST_FINAL_V5_STABLE"}
